@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bees!</title>
+
+<style>
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #E0E0E0;
+}
+
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#controls {
+  position: fixed;
+  bottom: 15px;
+  right: 15px;
+  display: flex;
+  gap: 10px;
+  z-index: 10;
+}
+
+#controls button {
+  background: #222;
+  color: white;
+  border: 2px solid #555;
+  padding: 10px 18px;
+  font-family: monospace;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+#controls button:hover {
+  background: #444;
+}
+
+#controls button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#controls.hidden {
+  display: none;
+}
+</style>
+</head>
+
+<body>
+<canvas id="screen"></canvas>
+
+<div id="controls">
+  <button id="refreshButton">Refresh</button>
+  <button id="exitButton">Exit</button>
+</div>
+
+<script>
+const canvas = document.getElementById("screen");
+const ctx = canvas.getContext("2d");
+const controls = document.getElementById("controls");
+
+const refreshButton = document.getElementById("refreshButton");
+const exitButton = document.getElementById("exitButton");
+
+const lines = [
+    "ACCORDING TO ALL KNOWN LAWS OF AVIATION, THERE IS NO WAY A BEE SHOULD BE ABLE TO FLY.",
+    "ITS WINGS ARE TOO SMALL TO GET ITS FAT LITTLE BODY OFF THE GROUND.",
+    "THE BEE, OF COURSE, FLIES ANYWAY BECAUSE BEES DON'T CARE WHAT HUMANS THINK IS IMPOSSIBLE.",
+    "YELLOW, BLACK. YELLOW, BLACK. YELLOW, BLACK. YELLOW, BLACK.",
+    "OOH, BLACK AND YELLOW!",
+    "LET'S SHAKE IT UP A LITTLE.",
+    "BARRY! BREAKFAST IS READY!",
+    "COMING!",
+    "HANG ON A SECOND.",
+    "HELLO?",
+    "BARRY?",
+    "ADAM?",
+    "CAN YOU BELIEVE THIS IS HAPPENING?",
+    "I CAN'T.",
+    "I'LL PICK YOU UP.",
+    "LOOKING SHARP.",
+    "USE THE STAIRS, YOUR FATHER PAID GOOD MONEY FOR THOSE.",
+    "SORRY. I'M EXCITED.",
+    "HERE'S THE GRADUATE.",
+    "WE'RE VERY PROUD OF YOU, SON.",
+    "A PERFECT REPORT CARD, ALL B'S.",
+    "VERY PROUD.",
+    "MA! I GOT A THING GOING HERE.",
+    "YOU GOT LINT ON YOUR FUZZ.",
+    "OW! THAT'S ME!",
+    "WAVE TO US! WE'LL BE IN ROW 118,000.",
+    "BYE!",
+];
+
+// YOUR ORIGINAL BITMAP ALPHABET
+
+const font = {
+A:["01110","10001","10001","11111","10001"],
+B:["11110","10001","11110","10001","11110"],
+C:["01111","10000","10000","10000","01111"],
+D:["11110","10001","10001","10001","11110"],
+E:["11111","10000","11110","10000","11111"],
+F:["11111","10000","11110","10000","10000"],
+G:["01111","10000","10111","10001","01111"],
+H:["10001","10001","11111","10001","10001"],
+I:["11111","00100","00100","00100","11111"],
+J:["00111","00010","00010","10010","01100"],
+K:["10001","10010","11100","10010","10001"],
+L:["10000","10000","10000","10000","11111"],
+M:["10001","11011","10101","10001","10001"],
+N:["10001","11001","10101","10011","10001"],
+O:["01110","10001","10001","10001","01110"],
+P:["11110","10001","11110","10000","10000"],
+Q:["01110","10001","10101","10010","01101"],
+R:["11110","10001","11110","10010","10001"],
+S:["01111","10000","01110","00001","11110"],
+T:["11111","00100","00100","00100","00100"],
+U:["10001","10001","10001","10001","01110"],
+V:["10001","10001","10001","01010","00100"],
+W:["10001","10001","10101","11011","10001"],
+X:["10001","01010","00100","01010","10001"],
+Y:["10001","01010","00100","00100","00100"],
+Z:["11111","00010","00100","01000","11111"],
+",":["00000","00000","00000","00100","01000"],
+".":["00000","00000","00000","00000","00100"],
+"'":["00100","00100","00000","00000","00000"],
+"!":["00100","00100","00100","00000","00100"],
+"1":["00100","01100","00100","00100","01110"],
+"8":["01110","01010","01110","01010","01110"],
+"0":["01110","01010","01010","01010","01110"]
+};
+
+let letters = [];
+let started = false;
+let transitioning = false;
+
+let scale, charWidth, charHeight, gap, lineGap;
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = innerWidth * dpr;
+  canvas.height = innerHeight * dpr;
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const longest = Math.max(...lines.map(line => line.length));
+
+  scale = Math.min(
+    innerWidth / (longest * 6 + 4),
+    innerHeight / (lines.length * 9 + 4)
+  );
+
+  charWidth = 5 * scale;
+  charHeight = 5 * scale;
+  gap = scale;
+  lineGap = 3 * scale;
+
+  buildLetters();
+
+  if (!transitioning) draw();
+}
+
+function buildLetters() {
+  letters = [];
+
+  const totalHeight =
+    lines.length * charHeight +
+    (lines.length - 1) * lineGap;
+
+  const startY = (innerHeight - totalHeight) / 2;
+
+  lines.forEach((line, row) => {
+    const totalWidth =
+      line.length * (charWidth + gap) - gap;
+
+    const startX = (innerWidth - totalWidth) / 2;
+
+    [...line].forEach((character, col) => {
+      const pattern = font[character];
+
+      if (!pattern) return;
+
+      letters.push({
+        x: startX + col * (charWidth + gap),
+        y: startY + row * (charHeight + lineGap),
+        pattern,
+        vx: 0,
+        vy: 0
+      });
+    });
+  });
+}
+
+function draw() {
+  const dpr = window.devicePixelRatio || 1;
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.fillStyle = "#E0E0E0";
+  ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+  for (const letter of letters) {
+    for (let y = 0; y < 5; y++) {
+      for (let x = 0; x < 5; x++) {
+        if (letter.pattern[y][x] === "1") {
+          ctx.fillStyle =
+            y % 2 === 0 ? "#111111" : "#e5b900";
+
+          ctx.fillRect(
+            letter.x + x * scale,
+            letter.y + y * scale,
+            scale,
+            scale
+          );
+        }
+      }
+    }
+  }
+}
+
+function animate() {
+  if (!started || transitioning) return;
+
+  for (const letter of letters) {
+    letter.x += letter.vx;
+    letter.y += letter.vy;
+
+    const maxX = innerWidth - charWidth;
+    const maxY = innerHeight - charHeight;
+
+    if (letter.x <= 0 || letter.x >= maxX) {
+      letter.vx *= -1;
+      letter.x = Math.max(0, Math.min(letter.x, maxX));
+    }
+
+    if (letter.y <= 0 || letter.y >= maxY) {
+      letter.vy *= -1;
+      letter.y = Math.max(0, Math.min(letter.y, maxY));
+    }
+  }
+
+  draw();
+  requestAnimationFrame(animate);
+}
+
+function start() {
+  if (started || transitioning) return;
+
+  started = true;
+
+  for (const letter of letters) {
+    letter.vx = Math.random() * 8 - 4;
+    letter.vy = Math.random() * 8 - 4;
+
+    if (Math.abs(letter.vx) < 1.5)
+      letter.vx = letter.vx < 0 ? -2 : 2;
+
+    if (Math.abs(letter.vy) < 1.5)
+      letter.vy = letter.vy < 0 ? -2 : 2;
+  }
+
+  animate();
+}
+
+// PIXEL TRANSITION SYSTEM
+
+function snapshot() {
+  const image = document.createElement("canvas");
+
+  image.width = canvas.width;
+  image.height = canvas.height;
+
+  image.getContext("2d").drawImage(canvas, 0, 0);
+
+  return image;
+}
+
+function createPieces() {
+  const pieces = [];
+  const size = 18;
+
+  for (let y = 0; y < innerHeight; y += size) {
+    for (let x = 0; x < innerWidth; x += size) {
+      const w = Math.min(size, innerWidth - x);
+      const h = Math.min(size, innerHeight - y);
+
+      pieces.push({
+        sx: x,
+        sy: y,
+        w,
+        h,
+
+        x: x + w / 2,
+        y: y + h / 2,
+
+        // Less horizontal movement prevents premature
+        // disappearance on narrow, vertical screens.
+        vx: Math.random() * 4 - 2,
+        vy: Math.random() * -5 - 1,
+
+        rotation: 0,
+        vr: Math.random() * 0.16 - 0.08
+      });
+    }
+  }
+
+  return pieces;
+}
+
+function setTransition(value) {
+  transitioning = value;
+
+  refreshButton.disabled = value;
+  exitButton.disabled = value;
+}
+
+function crumble(callback, force = false) {
+  if (transitioning && !force) return;
+
+  setTransition(true);
+  started = false;
+
+  controls.classList.add("hidden");
+
+  const image = snapshot();
+  const pieces = createPieces();
+
+  const dpr = window.devicePixelRatio || 1;
+
+  function frame() {
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+    let remaining = 0;
+
+    for (const p of pieces) {
+      p.x += p.vx;
+      p.y += p.vy;
+
+      p.vy += 0.19;
+      p.rotation += p.vr;
+
+      // Account for rotation when checking whether
+      // the entire piece has left the screen.
+      const radius = Math.hypot(p.w, p.h) / 2;
+
+      const below = p.y - radius > innerHeight;
+      const left = p.x + radius < 0;
+      const right = p.x - radius > innerWidth;
+
+      if (below || left || right) continue;
+
+      remaining++;
+
+      ctx.save();
+
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rotation);
+
+      ctx.drawImage(
+        image,
+        p.sx * dpr,
+        p.sy * dpr,
+        p.w * dpr,
+        p.h * dpr,
+        -p.w / 2,
+        -p.h / 2,
+        p.w,
+        p.h
+      );
+
+      ctx.restore();
+    }
+
+    if (remaining > 0) {
+      requestAnimationFrame(frame);
+    } else {
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+      if (callback) callback();
+    }
+  }
+
+  requestAnimationFrame(frame);
+}
+
+// REFRESH
+
+function refreshPage() {
+  crumble(() => {
+    sessionStorage.setItem("beeAviationAssemble", "1");
+    location.reload();
+  });
+}
+
+// ASSEMBLY AFTER REFRESH
+
+function assemble() {
+  const image = snapshot();
+  const pieces = createPieces();
+
+  const dpr = window.devicePixelRatio || 1;
+
+  for (const p of pieces) {
+    p.targetX = p.x;
+    p.targetY = p.y;
+
+    p.startX = Math.random() * innerWidth;
+    p.startY = Math.random() * innerHeight;
+
+    p.startRotation =
+      Math.random() * Math.PI * 4 - Math.PI * 2;
+  }
+
+  const startTime = performance.now();
+  const duration = 1400;
+
+  function frame(now) {
+    const progress = Math.min(
+      (now - startTime) / duration,
+      1
+    );
+
+    const eased = 1 - Math.pow(1 - progress, 3);
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+    for (const p of pieces) {
+      const x =
+        p.startX + (p.targetX - p.startX) * eased;
+
+      const y =
+        p.startY + (p.targetY - p.startY) * eased;
+
+      ctx.save();
+
+      ctx.translate(x, y);
+      ctx.rotate(p.startRotation * (1 - eased));
+
+      ctx.drawImage(
+        image,
+        p.sx * dpr,
+        p.sy * dpr,
+        p.w * dpr,
+        p.h * dpr,
+        -p.w / 2,
+        -p.h / 2,
+        p.w,
+        p.h
+      );
+
+      ctx.restore();
+    }
+
+    if (progress < 1) {
+      requestAnimationFrame(frame);
+    } else {
+      draw();
+
+      setTransition(false);
+      controls.classList.remove("hidden");
+    }
+  }
+
+  requestAnimationFrame(frame);
+}
+
+// BITMAP TEXT RENDERING USING YOUR ALPHABET
+
+function drawBitmapText(text, pixelSize, y) {
+  const charGap = pixelSize;
+  const charW = 5 * pixelSize;
+
+  const totalWidth =
+    text.length * (charW + charGap) - charGap;
+
+  const startX = (innerWidth - totalWidth) / 2;
+
+  [...text].forEach((character, index) => {
+    const pattern = font[character];
+
+    if (!pattern) return;
+
+    for (let py = 0; py < 5; py++) {
+      for (let px = 0; px < 5; px++) {
+        if (pattern[py][px] === "1") {
+          ctx.fillStyle =
+            py % 2 === 0 ? "#FFFFFF" : "#e5b900";
+
+          ctx.fillRect(
+            startX + index * (charW + charGap) +
+              px * pixelSize,
+            y + py * pixelSize,
+            pixelSize,
+            pixelSize
+          );
+        }
+      }
+    }
+  });
+}
+
+// GOODBYE
+
+function exitPage() {
+  crumble(() => {
+    const dpr = window.devicePixelRatio || 1;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+    const text = "GOODBYE!";
+
+    const pixelSize = Math.min(
+      12,
+      innerWidth / (text.length * 6 - 1),
+      innerHeight / 5
+    );
+
+    const textHeight = 5 * pixelSize;
+    const y = (innerHeight - textHeight) / 2;
+
+    drawBitmapText(text, pixelSize, y);
+
+    setTimeout(() => {
+      // Force allows the second crumble to run even
+      // though the exit transition is still active.
+      crumble(() => {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, innerWidth, innerHeight);
+
+        // Remain on the black screen.
+        setTransition(true);
+      }, true);
+    }, 1800);
+  });
+}
+
+// EVENTS
+
+canvas.addEventListener("click", start);
+canvas.addEventListener("touchstart", start, {
+  passive: true
+});
+
+refreshButton.addEventListener("click", refreshPage);
+exitButton.addEventListener("click", exitPage);
+
+window.addEventListener("resize", () => {
+  if (!transitioning) resize();
+});
+
+// INITIALISATION
+
+resize();
+
+if (sessionStorage.getItem("beeAviationAssemble") === "1") {
+  sessionStorage.removeItem("beeAviationAssemble");
+
+  setTransition(true);
+  controls.classList.add("hidden");
+
+  assemble();
+}
+</script>
+</body>
+</html>
